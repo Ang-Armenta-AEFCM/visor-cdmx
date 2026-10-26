@@ -1,85 +1,15 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="utf-8">
-  <title>Visor de mantenimiento escolar - CDMX</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="css/estilos.css">
-</head>
-<body>
-  <button id="menuBtn" class="menu-btn">☰</button>
-
-  <aside id="sidebar" class="sidebar">
-    <div class="side-header">
-      <h2>Escuelas CDMX</h2>
-      <button id="closeBtn" class="close-btn">×</button>
-    </div>
-
-    <input id="searchBox" type="text" placeholder="Buscar escuela o CCT">
-
-    <div class="stats">
-      <b>Escuelas visibles:</b> <span id="visibleCount">0</span><br>
-      Muy alta: <b id="countMuyAlta">0</b> |
-      Alta: <b id="countAlta">0</b><br>
-      Media: <b id="countMedia">0</b> |
-      Baja: <b id="countBaja">0</b> |
-      Muy baja: <b id="countMuyBaja">0</b>
-    </div>
-
-    <hr>
-    <h3>Capas</h3>
-    <label><input type="checkbox" id="chkEscuelas" checked> Escuelas</label>
-    <label><input type="checkbox" id="chkAlcaldias" checked> Alcaldías</label>
-    <label><input type="checkbox" id="chkAgeb"> AGEB</label>
-
-    <hr>
-    <h3>Filtro por alcaldía</h3>
-    <select id="alcaldiaFilter"><option value="todas">Todas</option></select>
-
-    <hr>
-    <h3>Prioridad</h3>
-    <label><input type="checkbox" class="priorityChk" value="muy_alta" checked> Muy alta</label>
-    <label><input type="checkbox" class="priorityChk" value="alta" checked> Alta</label>
-    <label><input type="checkbox" class="priorityChk" value="media" checked> Media</label>
-    <label><input type="checkbox" class="priorityChk" value="baja" checked> Baja</label>
-    <label><input type="checkbox" class="priorityChk" value="muy_baja" checked> Muy baja</label>
-
-    <hr>
-    <h3>Necesidades</h3>
-    <p class="hint">Puedes seleccionar varias. Se muestran escuelas que tengan todas las variables marcadas en “Si”.</p>
-    <label><input type="checkbox" class="needChk" value="Impermeabi"> Impermeabilización</label>
-    <label><input type="checkbox" class="needChk" value="Aplicacion"> Pintura interior</label>
-    <label><input type="checkbox" class="needChk" value="Aplicaci_1"> Pintura exterior</label>
-    <label><input type="checkbox" class="needChk" value="Colocacion"> Loseta</label>
-    <label><input type="checkbox" class="needChk" value="Sustitucio"> Sustitución de vidrios</label>
-    <label><input type="checkbox" class="needChk" value="Rehabilita"> Cancelería aluminio</label>
-    <label><input type="checkbox" class="needChk" value="Sustituc_1"> Herrería por aluminio</label>
-    <label><input type="checkbox" class="needChk" value="Sustituc_2"> Puertas</label>
-    <label><input type="checkbox" class="needChk" value="Sustituc_3"> Barandales</label>
-    <label><input type="checkbox" class="needChk" value="Rehabili_2"> Muros / techos</label>
-    <label><input type="checkbox" class="needChk" value="Desazolve"> Desazolve</label>
-    <label><input type="checkbox" class="needChk" value="Balizamien"> Balizamiento</label>
-    <label><input type="checkbox" class="needChk" value="Poda_de_ar"> Poda de árboles</label>
-    <label><input type="checkbox" class="needChk" value="Retiro_de_"> Retiro de árboles</label>
-    <label><input type="checkbox" class="needChk" value="Valoracion"> Valoración de árboles</label>
-
-    <button id="resetBtn" class="reset-btn">Limpiar filtros</button>
-  </aside>
-
-  <div id="map"></div>
-
-  <div class="legend">
-    <b>Prioridad</b><br>
-    <span class="dot" style="background:#1a9850"></span>Muy baja<br>
-    <span class="dot" style="background:#91cf60"></span>Baja<br>
-    <span class="dot" style="background:#ffffbf"></span>Media<br>
-    <span class="dot" style="background:#fc8d59"></span>Alta<br>
-    <span class="dot" style="background:#d73027"></span>Muy alta
-  </div>
-
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/config.js"></script>
-  <script src="js/mapa.js"></script>
-</body>
-</html>
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#123e3a"><title>Atlas · Mantenimiento escolar CDMX</title><link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="vendor/MarkerCluster.css"><link rel="stylesheet" href="css/estilos.css"></head><body>
+<header class="topbar"><button id="menuBtn" class="icon" aria-label="Abrir filtros">☰</button><div class="brand">A<span>◎</span></div><div><strong>ATLAS ESCOLAR</strong><small>Mantenimiento e infraestructura · Ciudad de México</small></div><span class="cycle">Ciclo 2025–2026</span><span id="status" role="status">Cargando datos…</span></header>
+<main><aside id="sidebar"><div class="panel-heading"><div><span class="eyebrow">EXPLORACIÓN TERRITORIAL</span><h1>Necesidades escolares</h1></div><button id="closeBtn" class="icon" aria-label="Cerrar filtros">×</button></div><p class="intro">Localiza, filtra y consulta las necesidades de mantenimiento reportadas.</p>
+<label class="search-label" for="searchBox">Buscar escuela o CCT</label><div class="search"><span>⌕</span><input id="searchBox" placeholder="Nombre, CCT o alcaldía" autocomplete="off" spellcheck="false" type="search" aria-controls="suggestions"></div><div id="suggestions" class="suggestions"></div>
+<div class="tabs" role="tablist"><button class="active" id="filtersTab" role="tab" aria-selected="true">Filtros</button><button id="summaryTab" role="tab" aria-selected="false">Estadísticas</button></div>
+<section id="filters"><div class="section-label"><h2>Territorio y nivel</h2><button id="resetBtn" class="text-btn">Restablecer</button></div><label for="alcaldiaFilter">Alcaldía</label><select id="alcaldiaFilter"><option value="todas">Todas las alcaldías</option></select><label for="levelFilter">Nivel educativo</label><select id="levelFilter"><option value="todas">Todos los niveles</option></select>
+<h2>Prioridad de atención</h2><p class="hint">Rangos originales según Total_Nec.</p><div id="priorities"></div>
+<details open><summary>Necesidades de mantenimiento</summary><p class="hint">Deben cumplirse todas las necesidades seleccionadas.</p><div id="needs"></div></details>
+<details><summary>Capas del mapa</summary><label class="check"><input type="checkbox" id="chkEscuelas" checked> Registros escolares</label><label class="check"><input type="checkbox" id="chkAlcaldias" checked> Límites de alcaldías</label><label class="check"><input type="checkbox" id="chkAgeb"> Límites de AGEB</label><label class="check"><input type="checkbox" id="chkCluster" checked> Agrupar puntos cercanos</label></details></section>
+<section id="summary" hidden><h2>Distribución de resultados</h2><p class="hint">Responde a los filtros; no depende del encuadre.</p><div id="chart"></div><h2>Por alcaldía</h2><div id="boroughChart"></div><p class="hint">La unidad de conteo es el registro de la base original. Un registro puede contener varios CCT. No equivale a contar CCT únicos.</p></section>
+<div class="sidebar-footer"><button id="exportBtn" class="primary">↓ Exportar resultados CSV</button><small>Base original conservada · 558 registros</small></div></aside>
+<section class="map-region" aria-label="Mapa de mantenimiento"><div id="map"></div><div class="map-summary"><div><span>RESULTADOS FILTRADOS</span><strong id="filteredCount">—</strong></div><div><span>EN EL ÁREA VISIBLE</span><strong id="visibleCount">—</strong></div><button id="fitBtn" title="Encuadrar resultados">↗ <span>Encuadrar</span></button></div><div class="map-tools"><button id="homeBtn" title="Volver a Ciudad de México" aria-label="Volver a Ciudad de México">⌂</button><select id="baseMap" aria-label="Mapa base"><option value="claro">Mapa claro</option><option value="satelite">Satélite Esri</option><option value="osm">OpenStreetMap</option></select></div><div class="legend"><b>Prioridad de atención</b><div id="legendItems"></div><small>Selecciona un punto para consultar su ficha.</small></div><div id="empty" hidden>No hay resultados con estos filtros.</div></section>
+<aside id="detail" hidden aria-label="Ficha del registro"><button id="detailClose" class="detail-close icon" aria-label="Cerrar ficha">×</button><div id="detailContent"></div></aside></main>
+<dialog id="doomDialog" aria-label="DOOM"><div class="game-header"><div><span class="eyebrow">ÁREA SECRETA DESBLOQUEADA</span><strong>DOOM <small>· Shareware 1.9</small></strong></div><div><button id="gameFullscreen">Pantalla completa</button><button id="gameClose" aria-label="Cerrar juego">×</button></div></div><div id="gameHost"></div><p class="game-help">Enter: menú · Flechas: mover · Ctrl: disparar · Espacio: usar · Alt: desplazamiento lateral · Esc: menú del juego. Cierra con × para regresar al mapa.</p></dialog>
+<script src="vendor/leaflet.js"></script><script src="vendor/markercluster.js"></script><script src="js/config.js"></script><script src="js/mapa.js"></script></body></html>

@@ -1,230 +1,58 @@
-const map = L.map("map").setView([19.35, -99.10], 11);
-
-const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 20, attribution: "OpenStreetMap" }).addTo(map);
-const claro = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 20, attribution: "OpenStreetMap | CARTO" });
-const satelite = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 20, attribution: "Esri" });
-
-L.control.layers({ "OpenStreetMap": osm, "Mapa claro": claro, "Satélite": satelite }, {}, { collapsed: true }).addTo(map);
-
-let escuelasData = null;
-let escuelasLayer = null;
-let alcaldiasLayer = null;
-let agebLayer = null;
-let alcaldiaColorMap = {};
-
-function cleanText(value) {
-  return String(value ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+'use strict';
+const $=id=>document.getElementById(id), clean=v=>String(v??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(), esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const priorities=[['muy_alta','Muy alta',22,'#b83b4e','22 o más'],['alta','Alta',16,'#e48b42','16–21'],['media','Media',10,'#d5b044','10–15'],['baja','Baja',5,'#82ae79','5–9'],['muy_baja','Muy baja',0,'#307b70','0–4']];
+const priority=p=>priorities.find(a=>Number(p.Total_Nec??0)>=a[2])||priorities[4];
+const school=p=>p.Nombre||'Sin nombre', borough=p=>p.Alcaldia||'Sin dato';
+const ccts=p=>['CCT','CCT2','CCT3','CCT4'].map(k=>String(p[k]??'').trim()).filter(Boolean);
+let data=[],filtered=[],markers=new Map(),selected=null,alcaldiasLayer,agebLayer,schoolLayer,queryTimer;
+const map=L.map('map',{zoomControl:false,preferCanvas:true}).setView([19.35,-99.1],11);L.control.zoom({position:'topright'}).addTo(map);L.control.scale({position:'bottomright',imperial:false}).addTo(map);
+const bases={claro:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,maxNativeZoom:16,attribution:'Tiles © Esri — HERE, Garmin, © OpenStreetMap contributors'}),satelite:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'}),osm:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'})};let activeBase=bases.claro;activeBase.addTo(map);
+map.createPane('boundaries');map.getPane('boundaries').style.zIndex=350;
+$('priorities').innerHTML=priorities.map(a=>`<label class="check"><input class="priorityChk" type="checkbox" value="${a[0]}" checked><span class="dot" style="background:${a[3]}"></span>${a[1]}<em>${a[4]}</em></label>`).join('');
+$('legendItems').innerHTML=priorities.map(a=>`<span><i class="dot" style="background:${a[3]}"></i>${a[1]}</span>`).join('');
+$('needs').innerHTML=Object.entries(NEED_FIELDS).map(([k,v])=>`<label class="check"><input class="needChk" type="checkbox" value="${k}">${v}</label>`).join('');
+const checked=selector=>Array.from(document.querySelectorAll(selector+':checked'),e=>e.value);
+function matches(f,query=clean($('searchBox').value)){
+ const p=f.properties;return checked('.priorityChk').includes(priority(p)[0])&&($('alcaldiaFilter').value==='todas'||borough(p)===$('alcaldiaFilter').value)&&($('levelFilter').value==='todas'||p.Nivel_prin===$('levelFilter').value)&&checked('.needChk').every(k=>clean(p[k])==='si')&&(!query||clean([school(p),...ccts(p),borough(p)].join(' ')).includes(query));
 }
-function isYes(value) { return cleanText(value) === "si"; }
-function getTotal(p) { return Number(p.Total_Nec ?? 0); }
-function getSchoolName(p) { return p.Nombre || p.NOMBRE || p.nombre || p.NOM_ESC || p.NOM_CCT || "Escuela sin nombre"; }
-function getCCT(p) { return p.CCT || p.CCT_1 || p.CCT1 || p.Clave || p.CLAVECCT || ""; }
-function getAlcaldia(p) { return p.Alcaldia || p.ALCALDIA || p.NOMGEO || p.NOM_ALC || p.NOM_MUN || "Sin dato"; }
-function getAlcaldiaNameFromPolygon(p) { return p.Alcaldia || p.ALCALDIA || p.NOMGEO || p.NOM_ALC || p.NOM_MUN || p.NOMBRE || p.Nombre || "Sin nombre"; }
-
-function getPriority(total) {
-  total = Number(total);
-  if (total >= 22) return "muy_alta";
-  if (total >= 16) return "alta";
-  if (total >= 10) return "media";
-  if (total >= 5) return "baja";
-  return "muy_baja";
+function visibleStats(){const n=$('chkEscuelas').checked?filtered.filter(f=>map.getBounds().contains([f.geometry.coordinates[1],f.geometry.coordinates[0]])).length:0;$('visibleCount').textContent=n.toLocaleString('es-MX');}
+function bars(items,total){return items.map(([name,n,color])=>`<div class="bar-row"><div class="bar-label"><span>${esc(name)}</span><b>${n.toLocaleString('es-MX')}</b></div><div class="bar-track"><i style="width:${total?n/total*100:0}%;background:${color}"></i></div></div>`).join('');}
+function refresh(){
+ if(!data.length)return;
+ if(schoolLayer)map.removeLayer(schoolLayer);markers.clear();
+ filtered=data.filter(f=>matches(f));
+ schoolLayer=$('chkCluster').checked?L.markerClusterGroup({maxClusterRadius:44,disableClusteringAtZoom:17,showCoverageOnHover:false,spiderfyOnMaxZoom:true,iconCreateFunction:c=>L.divIcon({html:`<div>${c.getChildCount()}</div>`,className:'marker-cluster',iconSize:[40,40]})}):L.featureGroup();
+ filtered.forEach(f=>{const p=f.properties,pr=priority(p),marker=L.circleMarker([f.geometry.coordinates[1],f.geometry.coordinates[0]],{radius:7+(4-priorities.indexOf(pr))*.8,fillColor:pr[3],color:'#fff',weight:1.5,fillOpacity:.95});marker.bindTooltip(`${esc(school(p))}<br>${esc(ccts(p).join(' · '))}`);marker.on('click',()=>showDetail(f));schoolLayer.addLayer(marker);markers.set(f,marker);});
+ if($('chkEscuelas').checked)schoolLayer.addTo(map);
+ $('filteredCount').textContent=filtered.length.toLocaleString('es-MX');$('empty').hidden=filtered.length!==0;visibleStats();
+ $('chart').innerHTML=bars(priorities.map(pr=>[pr[1],filtered.filter(f=>priority(f.properties)[0]===pr[0]).length,pr[3]]),filtered.length);
+ const counts={};filtered.forEach(f=>counts[borough(f.properties)]=(counts[borough(f.properties)]||0)+1);
+ $('boroughChart').innerHTML=bars(Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([n,c])=>[n,c,'#307b70']),filtered.length);
+ if(selected&&!filtered.includes(selected)){$('detail').hidden=true;selected=null;}
 }
-function priorityText(total) {
-  const p = getPriority(total);
-  if (p === "muy_alta") return "Muy alta";
-  if (p === "alta") return "Alta";
-  if (p === "media") return "Media";
-  if (p === "baja") return "Baja";
-  return "Muy baja";
-}
-function priorityColor(total) {
-  total = Number(total);
-  if (total >= 22) return "#d73027";
-  if (total >= 16) return "#fc8d59";
-  if (total >= 10) return "#ffffbf";
-  if (total >= 5) return "#91cf60";
-  return "#1a9850";
-}
-function priorityRadius(total) {
-  total = Number(total);
-  if (total >= 22) return 12;
-  if (total >= 16) return 10;
-  if (total >= 10) return 8;
-  if (total >= 5) return 6;
-  return 4;
-}
-
-function selectedPriorities() {
-  return Array.from(document.querySelectorAll(".priorityChk:checked")).map(chk => chk.value);
-}
-function selectedNeeds() {
-  return Array.from(document.querySelectorAll(".needChk:checked")).map(chk => chk.value);
-}
-function featurePassesFilters(feature) {
-  const p = feature.properties || {};
-  const query = cleanText(document.getElementById("searchBox").value);
-  const alcaldia = document.getElementById("alcaldiaFilter").value;
-  const priorities = selectedPriorities();
-  const needs = selectedNeeds();
-
-  if (!priorities.includes(getPriority(getTotal(p)))) return false;
-  if (alcaldia !== "todas" && cleanText(getAlcaldia(p)) !== cleanText(alcaldia)) return false;
-
-  if (query) {
-    const text = cleanText(`${getSchoolName(p)} ${getCCT(p)} ${getAlcaldia(p)}`);
-    if (!text.includes(query)) return false;
-  }
-
-  for (const field of needs) {
-    if (!isYes(p[field])) return false;
-  }
-  return true;
-}
-
-function createPopup(p) {
-  let needsHTML = "";
-  Object.keys(NEED_FIELDS).forEach(field => {
-    const val = p[field] || "Sin dato";
-    const icon = isYes(val) ? "✅" : "—";
-    needsHTML += `${icon} <b>${NEED_FIELDS[field]}:</b> ${val}<br>`;
-  });
-
-  return `<div class="popup-title">${getSchoolName(p)}</div>
-    <b>CCT:</b> ${getCCT(p)}<br>
-    <b>Alcaldía:</b> ${getAlcaldia(p)}<br>
-    <b>Nivel:</b> ${p.Nivel_prin || "Sin dato"}<br>
-    <b>Total necesidades:</b> ${getTotal(p)}<br>
-    <b>Prioridad:</b> ${priorityText(getTotal(p))}<br>
-    <hr>${needsHTML}`;
-}
-
-function updateStats(counts) {
-  document.getElementById("visibleCount").textContent = counts.total;
-  document.getElementById("countMuyAlta").textContent = counts.muy_alta;
-  document.getElementById("countAlta").textContent = counts.alta;
-  document.getElementById("countMedia").textContent = counts.media;
-  document.getElementById("countBaja").textContent = counts.baja;
-  document.getElementById("countMuyBaja").textContent = counts.muy_baja;
-}
-
-function drawSchools() {
-  if (escuelasLayer) map.removeLayer(escuelasLayer);
-
-  const counts = { total: 0, muy_alta: 0, alta: 0, media: 0, baja: 0, muy_baja: 0 };
-
-  escuelasLayer = L.geoJSON(escuelasData, {
-    filter: function(feature) {
-      const ok = featurePassesFilters(feature);
-      if (ok) {
-        const pr = getPriority(getTotal(feature.properties || {}));
-        counts.total += 1;
-        counts[pr] += 1;
-      }
-      return ok;
-    },
-    pointToLayer: function(feature, latlng) {
-      const total = getTotal(feature.properties || {});
-      return L.circleMarker(latlng, {
-        radius: priorityRadius(total),
-        fillColor: priorityColor(total),
-        color: "#111",
-        weight: 1,
-        fillOpacity: 0.9
-      });
-    },
-    onEachFeature: function(feature, layer) {
-      layer.bindPopup(createPopup(feature.properties || {}));
-    }
-  });
-
-  updateStats(counts);
-  if (document.getElementById("chkEscuelas").checked) escuelasLayer.addTo(map);
-}
-
-function drawAlcaldias(data) {
-  const names = data.features.map(f => getAlcaldiaNameFromPolygon(f.properties || {})).sort();
-  names.forEach((name, i) => alcaldiaColorMap[name] = ALCALDIA_COLORS[i % ALCALDIA_COLORS.length]);
-
-  alcaldiasLayer = L.geoJSON(data, {
-    style: function(feature) {
-      const name = getAlcaldiaNameFromPolygon(feature.properties || {});
-      return { color: "#333", weight: 1, fillColor: alcaldiaColorMap[name] || "#ccc", fillOpacity: 0.35 };
-    },
-    onEachFeature: function(feature, layer) {
-      const name = getAlcaldiaNameFromPolygon(feature.properties || {});
-      layer.bindPopup(`<b>${name}</b>`);
-    }
-  }).addTo(map);
-}
-
-function populateAlcaldiaFilter() {
-  const select = document.getElementById("alcaldiaFilter");
-  const names = new Set();
-  escuelasData.features.forEach(f => names.add(getAlcaldia(f.properties || {})));
-
-  Array.from(names).sort().forEach(name => {
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    select.appendChild(opt);
-  });
-}
-
-Promise.all([
-  fetch(DATA_FILES.escuelas).then(r => r.json()),
-  fetch(DATA_FILES.alcaldias).then(r => r.json()),
-  fetch(DATA_FILES.ageb).then(r => r.json()).catch(() => null)
-]).then(([escuelas, alcaldias, ageb]) => {
-  escuelasData = escuelas;
-  drawAlcaldias(alcaldias);
-
-  if (ageb) {
-    agebLayer = L.geoJSON(ageb, { style: { color: "#444", weight: 0.4, fillOpacity: 0 } });
-  }
-
-  populateAlcaldiaFilter();
-  drawSchools();
-
-  if (escuelasLayer.getBounds().isValid()) {
-    map.fitBounds(escuelasLayer.getBounds(), { padding: [25, 25] });
-  }
-}).catch(err => {
-  alert("No se pudieron cargar los datos. Revisa que los archivos estén dentro de la carpeta data.");
-  console.error(err);
-});
-
-function refresh() { drawSchools(); }
-
-document.getElementById("searchBox").addEventListener("input", refresh);
-document.getElementById("alcaldiaFilter").addEventListener("change", refresh);
-document.querySelectorAll(".priorityChk").forEach(chk => chk.addEventListener("change", refresh));
-document.querySelectorAll(".needChk").forEach(chk => chk.addEventListener("change", refresh));
-
-document.getElementById("chkEscuelas").addEventListener("change", function() {
-  if (!escuelasLayer) return;
-  if (this.checked) escuelasLayer.addTo(map);
-  else map.removeLayer(escuelasLayer);
-});
-document.getElementById("chkAlcaldias").addEventListener("change", function() {
-  if (!alcaldiasLayer) return;
-  if (this.checked) alcaldiasLayer.addTo(map);
-  else map.removeLayer(alcaldiasLayer);
-});
-document.getElementById("chkAgeb").addEventListener("change", function() {
-  if (!agebLayer) return;
-  if (this.checked) agebLayer.addTo(map);
-  else map.removeLayer(agebLayer);
-});
-
-document.getElementById("resetBtn").addEventListener("click", function() {
-  document.getElementById("searchBox").value = "";
-  document.getElementById("alcaldiaFilter").value = "todas";
-  document.querySelectorAll(".priorityChk").forEach(chk => chk.checked = true);
-  document.querySelectorAll(".needChk").forEach(chk => chk.checked = false);
-  refresh();
-});
-
-const sidebar = document.getElementById("sidebar");
-document.getElementById("menuBtn").addEventListener("click", () => sidebar.classList.remove("hidden"));
-document.getElementById("closeBtn").addEventListener("click", () => sidebar.classList.add("hidden"));
+function showDetail(f){selected=f;const p=f.properties,pr=priority(p);const row=(k,v)=>`<div class="meta-row"><span>${esc(k)}</span><b>${esc(v??'Sin dato')}</b></div>`;
+ $('detailContent').innerHTML=`<span class="eyebrow">FICHA DE MANTENIMIENTO</span><h2 class="detail-title">${esc(school(p))}</h2><span class="badge" style="color:${pr[3]}">● Prioridad ${pr[1].toLowerCase()}</span><h2>Identificación</h2>${row('CCT asociados',ccts(p).join(' · '))}${row('Alcaldía',borough(p))}${row('Nivel',p.Nivel_prin)}${row('Ciclo',p.Ciclo)}${row('ID inmueble',p.IDinmueble)}${row('Total de necesidades',p.Total_Nec)}<h2>Necesidades reportadas</h2><p class="hint">Variables identificadas en el visor original con respuesta “Sí”. El total de la base puede incluir otros rubros.</p>${Object.entries(NEED_FIELDS).filter(([k])=>clean(p[k])==='si').map(([,v])=>`<div class="need-tag">${v}</div>`).join('')||'<p class="hint">Sin respuestas afirmativas en estos rubros.</p>'}<details class="raw"><summary>Todos los campos originales</summary>${Object.entries(p).map(([k,v])=>row(k,v)).join('')}</details>`;$('detail').hidden=false;if(innerWidth<=900)$('sidebar').classList.add('hidden');}
+function fit(){if(filtered.length)map.fitBounds(L.latLngBounds(filtered.map(f=>[f.geometry.coordinates[1],f.geometry.coordinates[0]])),{padding:[45,45],maxZoom:16});}
+function suggest(){const q=clean($('searchBox').value);$('suggestions').replaceChildren();if(q.length<2||q===secret)return;const results=data.filter(f=>matches(f,q)).slice(0,5);results.forEach(f=>{const b=document.createElement('button');b.type='button';b.innerHTML=`${esc(school(f.properties))}<small>${esc(ccts(f.properties).join(' · '))}</small>`;b.onclick=()=>{map.setView([f.geometry.coordinates[1],f.geometry.coordinates[0]],18);showDetail(f);$('suggestions').replaceChildren();};$('suggestions').appendChild(b);});}
+// Exact hidden trigger; never registered as a school, suggestion, or export record.
+const secret=String.fromCharCode(48,57,100,112,114,100,111,111,109);
+function openGame(){clearTimeout(queryTimer);$('suggestions').replaceChildren();$('searchBox').value='';refresh();if($('doomDialog').open)return;const frame=document.createElement('iframe');frame.src='game/index.html';frame.title='DOOM shareware';frame.allow='autoplay; fullscreen';$('gameHost').replaceChildren(frame);$('doomDialog').showModal();$('gameClose').focus();}
+function closeGame(){if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});$('doomDialog').close();$('gameHost').replaceChildren();$('searchBox').focus();}
+$('searchBox').addEventListener('input',()=>{clearTimeout(queryTimer);if(clean($('searchBox').value)===secret){openGame();return;}queryTimer=setTimeout(()=>{refresh();suggest();},150);});
+$('searchBox').addEventListener('keydown',e=>{if(e.key==='Enter'){if(clean(e.target.value)===secret)openGame();else{clearTimeout(queryTimer);refresh();$('suggestions').replaceChildren();fit();}}if(e.key==='Escape')$('suggestions').replaceChildren();});
+$('gameClose').onclick=closeGame;$('doomDialog').addEventListener('cancel',e=>{e.preventDefault();closeGame();});$('doomDialog').addEventListener('close',()=>$('gameHost').replaceChildren());$('gameFullscreen').onclick=()=>$('doomDialog').requestFullscreen?.().catch(()=>{});
+for(const id of ['alcaldiaFilter','levelFilter'])$(id).onchange=()=>{refresh();$('suggestions').replaceChildren();fit();};document.querySelectorAll('.priorityChk,.needChk').forEach(e=>e.onchange=()=>{refresh();$('suggestions').replaceChildren();});
+$('chkEscuelas').onchange=()=>{if(schoolLayer)$('chkEscuelas').checked?schoolLayer.addTo(map):map.removeLayer(schoolLayer);visibleStats();};$('chkCluster').onchange=refresh;
+for(const [id,getLayer] of [['chkAlcaldias',()=>alcaldiasLayer],['chkAgeb',()=>agebLayer]])$(id).onchange=()=>{const l=getLayer();if(l)$(id).checked?l.addTo(map):map.removeLayer(l);};
+$('resetBtn').onclick=()=>{$('searchBox').value='';$('alcaldiaFilter').value='todas';$('levelFilter').value='todas';document.querySelectorAll('.priorityChk').forEach(e=>e.checked=true);document.querySelectorAll('.needChk').forEach(e=>e.checked=false);$('suggestions').replaceChildren();refresh();fit();};
+$('fitBtn').onclick=fit;$('homeBtn').onclick=()=>map.fitBounds([[19.02,-99.37],[19.6,-98.94]]);$('detailClose').onclick=()=>{$('detail').hidden=true;selected=null;};
+$('baseMap').onchange=()=>{map.removeLayer(activeBase);activeBase=bases[$('baseMap').value].addTo(map);};
+$('menuBtn').onclick=()=>{$('sidebar').classList.toggle('hidden');setTimeout(()=>map.invalidateSize(),0);};$('closeBtn').onclick=()=>{$('sidebar').classList.add('hidden');map.invalidateSize();};
+for(const [tab,panel] of [['filtersTab','filters'],['summaryTab','summary']])$(tab).onclick=()=>{for(const [t,p] of [['filtersTab','filters'],['summaryTab','summary']]){$(t).classList.toggle('active',t===tab);$(t).setAttribute('aria-selected',String(t===tab));$(p).hidden=p!==panel;}};
+$('exportBtn').onclick=()=>{if(!filtered.length)return;const keys=Array.from(new Set(data.flatMap(f=>Object.keys(f.properties))));const cell=v=>'"'+(typeof v==='string'?v.replace(/^[=+@\-]/,"'$&"):String(v??'')).replace(/"/g,'""')+'"';const csv='\uFEFF'+[keys,...filtered.map(f=>keys.map(k=>f.properties[k]))].map(row=>row.map(cell).join(',')).join('\r\n');const u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=u;a.download='Mantenimiento_CDMX_resultados.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
+map.on('moveend',visibleStats);
+if(innerWidth<=900)$('sidebar').classList.add('hidden');
+async function load(url){const r=await fetch(url);if(!r.ok)throw Error(`${url}: ${r.status}`);return r.json();}
+(async()=>{try{const [schools,boroughs]=await Promise.all([load(DATA_FILES.escuelas),load(DATA_FILES.alcaldias)]);data=schools.features.filter(f=>f.geometry?.type==='Point'&&f.geometry.coordinates.every(Number.isFinite)&&Math.abs(f.geometry.coordinates[0])<=180&&Math.abs(f.geometry.coordinates[1])<=90);for(const [id,key] of [['alcaldiaFilter','Alcaldia'],['levelFilter','Nivel_prin']]){Array.from(new Set(data.map(f=>f.properties[key]).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'es')).forEach(n=>$(id).add(new Option(n,n)));}
+ alcaldiasLayer=L.geoJSON(boroughs,{pane:'boundaries',style:{color:'#5a7873',weight:1.3,fillColor:'#9cc1b6',fillOpacity:.08},onEachFeature:(f,l)=>l.bindTooltip(esc(f.properties.NOMGEO))}).addTo(map);refresh();fit();$('status').textContent=`${data.length} registros · ${boroughs.features.length} alcaldías`;try{const ageb=await load(DATA_FILES.ageb);agebLayer=L.geoJSON(ageb,{pane:'boundaries',interactive:false,style:{color:'#607e78',weight:.6,fillOpacity:0}});if($('chkAgeb').checked)agebLayer.addTo(map);}catch(e){$('chkAgeb').disabled=true;$('status').textContent+=' · AGEB no disponible';}
+ }catch(e){$('status').textContent='Error al cargar los datos';$('empty').hidden=false;$('empty').textContent='No fue posible cargar la base. Publica la carpeta completa en un servidor web y recarga.';console.error(e);}})();
